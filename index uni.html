@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>3arrefni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="container">
+    <div class="eventname" id="event-name-label">3arrefni</div>
+
+    <div id="error-banner" class="error-banner hidden" role="alert"></div>
+
+    <!-- LOADING -->
+    <section id="view-loading" class="card">
+      <p>Loading…</p>
+    </section>
+
+    <!-- CHECK-IN FORM -->
+    <section id="view-checkin" class="card hidden">
+      <h1>You're in.</h1>
+      <p>Answer a few quick questions and we'll match you with someone to meet tonight.</p>
+      <form id="checkin-form">
+        <div class="q-label">I am a…</div>
+        <div class="seg">
+          <input type="radio" id="g-girl" name="gender" value="girl" required><label for="g-girl">Girl</label>
+          <input type="radio" id="g-guy" name="gender" value="guy"><label for="g-guy">Guy</label>
+          <input type="radio" id="g-they" name="gender" value="they"><label for="g-they">They/them</label>
+        </div>
+
+        <div class="q-label">How old are you?</div>
+        <input type="number" id="age" name="age" required min="16" max="99" inputmode="numeric" placeholder="e.g. 21">
+
+        <div class="q-label">What are you here for?</div>
+        <div class="seg">
+          <input type="radio" id="i-friends" name="intent" value="friends" required><label for="i-friends">Just friends</label>
+          <input type="radio" id="i-open" name="intent" value="open"><label for="i-open">Open to more than friends</label>
+        </div>
+
+        <div class="field-row">
+          <div>
+            <label for="hobby1">A hobby of yours</label>
+            <input type="text" id="hobby1" name="hobby1" required maxlength="40" placeholder="e.g. football">
+          </div>
+          <div>
+            <label for="hobby2">Another one (optional)</label>
+            <input type="text" id="hobby2" name="hobby2" maxlength="40" placeholder="e.g. photography">
+          </div>
+        </div>
+
+        <label for="vibe">Your vibe tonight</label>
+        <select id="vibe" name="vibe" required>
+          <option value="" disabled selected>Choose one</option>
+          <option value="dance">Dancing all night</option>
+          <option value="chill">Chilling &amp; talking</option>
+          <option value="games">Games &amp; snacks</option>
+          <option value="anything">Up for anything</option>
+        </select>
+
+        <label for="description">What are you wearing? (or just describe yourself)</label>
+        <textarea id="description" name="description" required maxlength="200" placeholder="e.g. blue denim jacket, curly hair, glasses"></textarea>
+
+        <button type="submit" class="btn btn-primary">Check in</button>
+      </form>
+
+      <div style="margin-top:18px; text-align:center;">
+        <a href="#" id="show-code-entry" style="font-size:14px; color:var(--ink-soft); text-decoration:underline;">Already checked in? Enter your code</a>
+      </div>
+      <div id="code-entry-box" class="hidden" style="margin-top:12px;">
+        <label for="recover-code-input">Your code</label>
+        <input type="text" id="recover-code-input" placeholder="e.g. K7QX4" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;">
+        <button type="button" class="btn btn-secondary" id="recover-code-btn">Continue</button>
+      </div>
+    </section>
+
+    <!-- WAITING -->
+    <section id="view-waiting" class="card hidden">
+      <div class="status-row"><span class="pulse-dot"></span><strong>Checked in</strong></div>
+      <h1>Hang tight.</h1>
+      <p>We're waiting for the host to run the matching. Keep this tab open — this screen updates on its own the moment you're matched.</p>
+      <div class="secret-ticket">
+        <p>Your code — save it. If you close this page or switch phones, come back to this link and enter it to get straight back:</p>
+        <div class="secret-word" id="my-code-waiting"></div>
+      </div>
+    </section>
+
+    <!-- MATCHED -->
+    <section id="view-matched" class="card hidden">
+      <div class="status-row"><span class="pulse-dot" style="background:var(--coral)"></span><strong>You've been matched!</strong></div>
+      <h1 class="partner-name" id="match-title">Your match</h1>
+      <p id="match-sub" class="hidden"></p>
+      <div id="partners"></div>
+
+      <div class="secret-ticket">
+        <p>Find them in the room, then confirm it's really them with your secret word:</p>
+        <div class="secret-word" id="secret-word"></div>
+      </div>
+
+      <button type="button" class="btn btn-secondary" id="open-chat-btn">Open chat</button>
+      <p class="hint">Your code, in case you switch devices: <strong id="my-code-matched"></strong></p>
+    </section>
+
+    <!-- CHAT -->
+    <section id="view-chat" class="card hidden">
+      <div class="chat-head">
+        <h2>Your chat</h2>
+        <button type="button" class="btn btn-secondary btn-small" id="back-btn">Back</button>
+      </div>
+      <p class="hint" style="margin-bottom:10px;">Secret word: <strong id="chat-secret"></strong></p>
+      <div class="chat-log" id="chat-log" aria-live="polite"></div>
+      <form id="chat-form" class="chat-input-row">
+        <input type="text" id="chat-input" autocomplete="off" placeholder="Say hi…" maxlength="500" aria-label="Message">
+        <button type="submit" class="btn btn-primary">Send</button>
+      </form>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script>
+(function () {
+  var NAME = window.EVENT_NAME || '3arrefni';
+  document.getElementById('event-name-label').textContent = NAME;
+  document.title = NAME;
+
+  function T(name) { return (window.TABLE_PREFIX || '') + name; }
+
+  var VIBE_LABEL = { dance: 'Dancing all night', chill: 'Chilling & talking', games: 'Games & snacks', anything: 'Up for anything' };
+  var INTENT_LABEL = { friends: 'Just friends', open: 'Open to more than friends' };
+
+  // localStorage can throw (private mode, blocked storage) — never let that break the page.
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+
+  var views = ['view-loading', 'view-checkin', 'view-waiting', 'view-matched', 'view-chat'];
+  var currentView = 'view-loading';
+  function show(id) {
+    currentView = id;
+    views.forEach(function (v) { document.getElementById(v).classList.toggle('hidden', v !== id); });
+  }
+  function showError(msg) {
+    var b = document.getElementById('error-banner');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+  }
+  function clearError() { document.getElementById('error-banner').classList.add('hidden'); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  if (!window.SUPABASE_URL || window.SUPABASE_URL.indexOf('YOUR-PROJECT-REF') !== -1) {
+    showError('This app is not configured yet — supabase-config.js still has placeholder values.');
+    return;
+  }
+
+  var sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+  var deviceId = store.get('uni_device_id');
+  if (!deviceId) {
+    deviceId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random();
+    store.set('uni_device_id', deviceId);
+  }
+
+  // No look-alike characters (no I, L, O, 0, 1).
+  var CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  function generateAccessCode() {
+    var code = '';
+    for (var i = 0; i < 5; i++) code += CODE_ALPHABET.charAt(Math.floor(Math.random() * CODE_ALPHABET.length));
+    return code;
+  }
+
+  var myGuest = null, myMatch = null, partners = [];
+  var loadingMatch = false, celebrated = false;
+  var waitTimer = null, chatTimer = null, guestChannel = null, matchChannel = null, chatChannel = null;
+  var seenMsgIds = {};
+
+  function rememberGuest(g) {
+    myGuest = g;
+    if (g && g.access_code) store.set('uni_access_code', g.access_code);
+  }
+
+  function renderMyCode() {
+    if (!myGuest || !myGuest.access_code) return;
+    document.getElementById('my-code-waiting').textContent = myGuest.access_code;
+    document.getElementById('my-code-matched').textContent = myGuest.access_code;
+  }
+
+  // ---------- start-up ----------
+  async function init() {
+    try {
+      var savedCode = store.get('uni_access_code');
+      var res = null;
+      if (savedCode) res = await sb.from(T('guests')).select('*').eq('access_code', savedCode).maybeSingle();
+      if ((!res || !res.data) && !(res && res.error)) {
+        res = await sb.from(T('guests')).select('*').eq('device_id', deviceId).maybeSingle();
+      }
+      if (res.error) throw res.error;
+      if (res.data) {
+        await enterAs(res.data);
+      } else {
+        store.del('uni_access_code'); // stale (e.g. the host reset the event)
+        show('view-checkin');
+      }
+    } catch (e) {
+      console.error(e);
+      showError('Could not connect. Check your internet connection and reload.');
+      show('view-checkin');
+    }
+  }
+
+  async function enterAs(guest) {
+    rememberGuest(guest);
+    if (guest.match_id) {
+      await loadMatch(guest.match_id);
+    } else {
+      show('view-waiting');
+      renderMyCode();
+      watchForMatch();
+    }
+  }
+
+  // Wait for the host to run matching: realtime for speed, polling as a safety
+  // net (phones drop realtime connections when the screen locks).
+  function watchForMatch() {
+    if (!guestChannel) {
+      guestChannel = sb.channel('guest-' + myGuest.id)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: T('guests'), filter: 'id=eq.' + myGuest.id }, function (payload) {
+          rememberGuest(payload.new);
+          if (myGuest.match_id) loadMatch(myGuest.match_id);
+        })
+        .subscribe();
+    }
+    stopWaitPoll();
+    waitTimer = setInterval(async function () {
+      if (!myGuest || myMatch) return;
+      var r = await sb.from(T('guests')).select('match_id').eq('id', myGuest.id).maybeSingle();
+      if (r.data && r.data.match_id) {
+        myGuest.match_id = r.data.match_id;
+        loadMatch(r.data.match_id);
+      } else if (!r.error && !r.data) {
+        // our row is gone — the host reset the event
+        store.del('uni_access_code');
+        location.reload();
+      }
+    }, 6000);
+  }
+  function stopWaitPoll() { if (waitTimer) { clearInterval(waitTimer); waitTimer = null; } }
+
+  // ---------- the match ----------
+  async function loadMatch(matchId) {
+    if (loadingMatch) return;
+    loadingMatch = true;
+    try {
+      var m = await sb.from(T('matches')).select('*').eq('id', matchId).single();
+      if (m.error) throw m.error;
+      myMatch = m.data;
+      var ids = [myMatch.guest_a, myMatch.guest_b, myMatch.guest_c].filter(function (x) { return x && x !== myGuest.id; });
+      var p = await sb.from(T('guests')).select('*').in('id', ids);
+      if (p.error) throw p.error;
+      // keep a stable order so "Person 1 / Person 2" never swaps around
+      partners = ids.map(function (id) { return p.data.filter(function (g) { return g.id === id; })[0]; }).filter(Boolean);
+      stopWaitPoll();
+      clearError();
+      renderMatched();
+      watchMatchChanges(matchId);
+    } catch (e) {
+      console.error(e);
+      showError('Could not load your match. Reload the page to try again.');
+    } finally {
+      loadingMatch = false;
+    }
+  }
+
+  // If a late arrival gets added to our pair, refresh our screen.
+  function watchMatchChanges(matchId) {
+    if (matchChannel) return;
+    matchChannel = sb.channel('match-' + matchId)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: T('matches'), filter: 'id=eq.' + matchId }, function () {
+        loadMatch(matchId);
+      })
+      .subscribe();
+  }
+
+  function renderMatched() {
+    var trio = partners.length > 1;
+    document.getElementById('match-title').textContent = trio ? 'Your group of three' : 'Your match';
+    var sub = document.getElementById('match-sub');
+    if (trio) {
+      sub.textContent = 'The head-count was odd, so you’ve got two matches this time — double the fun.';
+      sub.classList.remove('hidden');
+    } else {
+      sub.classList.add('hidden');
+    }
+
+    var box = document.getElementById('partners');
+    box.innerHTML = '';
+    partners.forEach(function (p, i) {
+      var card = el('div', 'partner-card');
+      if (trio) card.appendChild(el('div', 'who', 'Person ' + (i + 1)));
+      card.appendChild(el('p', 'partner-desc', 'How to spot them: ' + p.description));
+      var hobbies = [p.hobby1, p.hobby2].filter(Boolean).join(' & ');
+      card.appendChild(el('p', 'partner-fact', 'Into: ' + hobbies));
+      card.appendChild(el('p', 'partner-fact', 'Vibe tonight: ' + (VIBE_LABEL[p.vibe] || '')));
+      card.appendChild(el('p', 'partner-fact', 'Here for: ' + (INTENT_LABEL[p.intent] || '')));
+      box.appendChild(card);
+    });
+
+    document.getElementById('secret-word').textContent = myMatch.secret_word;
+    document.getElementById('chat-secret').textContent = myMatch.secret_word;
+    renderMyCode();
+    if (currentView !== 'view-chat') show('view-matched');
+    if (!celebrated) { celebrated = true; launchConfetti(); }
+  }
+
+  // ---------- check-in ----------
+  document.getElementById('checkin-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    clearError();
+    var fd = new FormData(e.target);
+    var payload = {
+      device_id: deviceId,
+      access_code: generateAccessCode(),
+      gender: fd.get('gender'),
+      age: parseInt(fd.get('age'), 10),
+      intent: fd.get('intent'),
+      hobby1: (fd.get('hobby1') || '').trim(),
+      hobby2: (fd.get('hobby2') || '').trim() || null,
+      vibe: fd.get('vibe'),
+      description: (fd.get('description') || '').trim()
+    };
+    var btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Checking in…';
+
+    var res = await sb.from(T('guests')).insert(payload).select().single();
+    if (res.error && res.error.code === '23505') {
+      var msg = String(res.error.message || '') + String(res.error.details || '');
+      if (msg.indexOf('access_code') !== -1) {
+        // astronomically unlikely code collision: new code, try once more
+        payload.access_code = generateAccessCode();
+        res = await sb.from(T('guests')).insert(payload).select().single();
+      } else if (msg.indexOf('device_id') !== -1) {
+        // this browser already checked in (e.g. a second tab) — just pick up where it left off
+        var ex = await sb.from(T('guests')).select('*').eq('device_id', deviceId).maybeSingle();
+        if (ex.data) { await enterAs(ex.data); return; }
+      }
+    }
+    if (res.error) {
+      console.error(res.error);
+      showError('Something went wrong checking you in. Please try again.');
+      btn.disabled = false; btn.textContent = 'Check in';
+      return;
+    }
+    await enterAs(res.data);
+  });
+
+  document.getElementById('show-code-entry').addEventListener('click', function (e) {
+    e.preventDefault();
+    document.getElementById('code-entry-box').classList.remove('hidden');
+    document.getElementById('recover-code-input').focus();
+  });
+
+  document.getElementById('recover-code-btn').addEventListener('click', async function () {
+    var code = document.getElementById('recover-code-input').value.trim().toUpperCase();
+    if (!code) return;
+    clearError();
+    var res = await sb.from(T('guests')).select('*').eq('access_code', code).maybeSingle();
+    if (res.error || !res.data) {
+      showError('That code doesn’t match anyone checked in. Double-check it and try again.');
+      return;
+    }
+    await enterAs(res.data);
+  });
+
+  // ---------- chat ----------
+  document.getElementById('open-chat-btn').addEventListener('click', function () {
+    show('view-chat');
+    openChat();
+  });
+  document.getElementById('back-btn').addEventListener('click', function () {
+    stopChatPoll();
+    show('view-matched');
+  });
+
+  function partnerIndex(id) {
+    for (var i = 0; i < partners.length; i++) if (partners[i].id === id) return i;
+    return -1;
+  }
+
+  async function openChat() {
+    var log = document.getElementById('chat-log');
+    log.innerHTML = '';
+    seenMsgIds = {};
+    await refreshMessages();
+    if (!log.children.length) log.appendChild(el('div', 'chat-empty', 'No messages yet — say hi!'));
+    if (!chatChannel) {
+      chatChannel = sb.channel('chat-' + myMatch.id)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: T('messages'), filter: 'match_id=eq.' + myMatch.id }, function (payload) {
+          appendMessage(payload.new);
+        })
+        .subscribe();
+    }
+    stopChatPoll();
+    chatTimer = setInterval(refreshMessages, 5000);
+  }
+  function stopChatPoll() { if (chatTimer) { clearInterval(chatTimer); chatTimer = null; } }
+
+  async function refreshMessages() {
+    if (!myMatch) return;
+    var res = await sb.from(T('messages')).select('*').eq('match_id', myMatch.id).order('created_at', { ascending: true });
+    if (res.data) res.data.forEach(appendMessage);
+  }
+
+  function appendMessage(msg) {
+    if (seenMsgIds[msg.id]) return;
+    seenMsgIds[msg.id] = true;
+    var log = document.getElementById('chat-log');
+    var empty = log.querySelector('.chat-empty');
+    if (empty) empty.remove();
+    var mine = msg.sender_id === myGuest.id;
+    var div = el('div', 'bubble ' + (mine ? 'me' : 'them'));
+    if (!mine && partners.length > 1) {
+      var idx = partnerIndex(msg.sender_id);
+      if (idx !== -1) div.appendChild(el('span', 'who', 'Person ' + (idx + 1)));
+    }
+    div.appendChild(document.createTextNode(msg.body));
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  document.getElementById('chat-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var input = document.getElementById('chat-input');
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    var res = await sb.from(T('messages')).insert({ match_id: myMatch.id, sender_id: myGuest.id, body: text }).select().single();
+    if (res.error) { console.error(res.error); showError('Message didn’t send. Try again.'); input.value = text; return; }
+    appendMessage(res.data);
+  });
+
+  function launchConfetti() {
+    var colors = ['#FF5C7A', '#FFC857', '#2FBF9F', '#1B1A2E'];
+    for (var i = 0; i < 24; i++) {
+      var c = document.createElement('div');
+      c.className = 'confetti-piece';
+      c.style.left = Math.random() * 100 + 'vw';
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = (2 + Math.random() * 1.5) + 's';
+      c.style.animationDelay = (Math.random() * 0.4) + 's';
+      document.body.appendChild(c);
+      (function (node) { setTimeout(function () { node.remove(); }, 4000); })(c);
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

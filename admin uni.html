@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3arrefni — Host</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="container">
+    <div class="eventname">Host panel</div>
+
+    <div id="error-banner" class="error-banner hidden" role="alert"></div>
+
+    <!-- PASSCODE GATE -->
+    <section id="view-gate" class="card">
+      <h1>Host access</h1>
+      <p>Enter the passcode to open the panel.</p>
+      <input type="password" id="passcode-input" placeholder="Passcode" autocomplete="off">
+      <button type="button" class="btn btn-primary" id="passcode-submit">Enter</button>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="card hidden">
+      <h1>Match control</h1>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num" id="stat-checked-in">–</div><div class="stat-label">checked in</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-matched">–</div><div class="stat-label">matched</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-waiting">–</div><div class="stat-label">waiting for a match</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-groups">–</div><div class="stat-label">groups made</div></div>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="run-matching-btn">Run matching now</button>
+      <p class="hint" id="run-result"></p>
+      <button type="button" class="btn btn-secondary" id="refresh-btn">Refresh stats</button>
+
+      <div style="margin-top:26px; padding-top:18px; border-top:2px dashed var(--ink);">
+        <p class="hint">Careful — this permanently wipes every guest, match, and chat message for the whole event. Only for clearing test runs.</p>
+        <button type="button" class="btn btn-danger" id="reset-btn">Reset all event data</button>
+      </div>
+    </section>
+
+    <section id="view-guestlist" class="card hidden">
+      <h2>Checked-in guests</h2>
+      <table class="guest-table">
+        <thead><tr><th>I am</th><th>Age</th><th>Intent</th><th>Matched?</th></tr></thead>
+        <tbody id="guest-table-body"></tbody>
+      </table>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="matching.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (!window.SUPABASE_URL || window.SUPABASE_URL.includes('YOUR-PROJECT-REF')) {
+    showErr('This app is not configured yet — supabase-config.js still has placeholder values.');
+    return;
+  }
+  if (!window.Matching) {
+    showErr('matching.js did not load. Make sure it is uploaded next to admin.html with exactly that name.');
+    return;
+  }
+  var sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+  var PREFIX = window.TABLE_PREFIX || 'uni_';
+  function T(n) { return PREFIX + n; }
+
+  // sessionStorage can throw in private windows — never let that break the panel.
+  var store = {
+    get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+  };
+
+  function tryPasscode() {
+    if ($('passcode-input').value === window.ADMIN_PASSCODE) {
+      store.set('uni_admin_ok', '1');
+      openDashboard();
+    } else {
+      alert('Wrong passcode.');
+    }
+  }
+  $('passcode-submit').addEventListener('click', tryPasscode);
+  $('passcode-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') tryPasscode(); });
+  if (store.get('uni_admin_ok') === '1') openDashboard();
+
+  function openDashboard() {
+    $('view-gate').classList.add('hidden');
+    $('view-dashboard').classList.remove('hidden');
+    $('view-guestlist').classList.remove('hidden');
+    refreshStats();
+    // Keep the numbers fresh while the host watches people arrive.
+    setInterval(refreshStats, 8000);
+  }
+
+  $('refresh-btn').addEventListener('click', refreshStats);
+  $('run-matching-btn').addEventListener('click', runMatching);
+  $('reset-btn').addEventListener('click', resetEventData);
+
+  function showErr(msg) {
+    var b = $('error-banner');
+    b.textContent = msg;
+    b.classList.remove('hidden');
+  }
+  function clearErr() { $('error-banner').classList.add('hidden'); }
+
+  var LABEL = {
+    girl: 'Girl', guy: 'Guy', they: 'They/them',
+    friends: 'Friends', open: 'Open to more'
+  };
+  function label(v) { return LABEL[v] || v || ''; }
+
+  // ---------- stats + table ----------
+  async function refreshStats() {
+    var gRes = await sb.from(T('guests')).select('*').order('checked_in_at', { ascending: true });
+    if (gRes.error) { showErr('Could not load guests: ' + gRes.error.message); return; }
+    var mRes = await sb.from(T('matches')).select('id');
+    clearErr();
+    var guests = gRes.data;
+    var matched = guests.filter(function (g) { return g.match_id; }).length;
+    $('stat-checked-in').textContent = guests.length;
+    $('stat-matched').textContent = matched;
+    $('stat-waiting').textContent = guests.length - matched;
+    $('stat-groups').textContent = mRes.error ? '–' : mRes.data.length;
+
+    var tbody = $('guest-table-body');
+    tbody.innerHTML = '';
+    guests.forEach(function (g) {
+      var tr = document.createElement('tr');
+      [label(g.gender), String(g.age == null ? '' : g.age), label(g.intent), g.match_id ? 'Yes' : 'No'].forEach(function (txt) {
+        var td = document.createElement('td');
+        td.textContent = txt;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ---------- reset ----------
+  async function resetEventData() {
+    var ok = window.confirm('This permanently deletes ALL checked-in guests, matches, and chat messages for this event. This cannot be undone. Continue?');
+    if (!ok) return;
+    var btn = $('reset-btn');
+    btn.disabled = true; btn.textContent = 'Resetting…';
+    try {
+      var d1 = await sb.from(T('messages')).delete().not('id', 'is', null);
+      var d2 = await sb.from(T('matches')).delete().not('id', 'is', null);
+      var d3 = await sb.from(T('guests')).delete().not('id', 'is', null);
+      var err = d1.error || d2.error || d3.error;
+      if (err) {
+        console.error(err);
+        alert('Reset failed: ' + err.message + '\n\nRe-run supabase-schema.sql in the SQL Editor (it re-creates the access policies), then try again.');
+      } else {
+        $('run-result').textContent = 'Everything was cleared.';
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Something went wrong resetting. Check the browser console.');
+    }
+    btn.disabled = false; btn.textContent = 'Reset all event data';
+    await refreshStats();
+  }
+
+  // ---------- secret words ----------
+  var ADJECTIVES = ['Golden', 'Velvet', 'Electric', 'Neon', 'Cosmic', 'Silver', 'Wild', 'Lucky', 'Midnight', 'Sunny', 'Rusty', 'Jazzy', 'Quiet', 'Loud', 'Sparkly', 'Crimson', 'Turbo', 'Fuzzy', 'Mellow', 'Zesty'];
+  var NOUNS = ['Falcon', 'Pineapple', 'Compass', 'Lantern', 'Rocket', 'Otter', 'Comet', 'Maple', 'Tiger', 'Harbor', 'Biscuit', 'Cactus', 'Penguin', 'Volcano', 'Marble', 'Waffle', 'Panda', 'Disco', 'Mango', 'Pretzel'];
+  var usedWords = new Set();
+  function randomSecretWord() {
+    var w;
+    var tries = 0;
+    do {
+      w = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)] + ' ' + NOUNS[Math.floor(Math.random() * NOUNS.length)];
+      tries++;
+    } while (usedWords.has(w) && tries < 50);
+    usedWords.add(w);
+    return w;
+  }
+
+  // ---------- matching ----------
+  async function runMatching() {
+    var btn = $('run-matching-btn');
+    var resultEl = $('run-result');
+    btn.disabled = true; btn.textContent = 'Matching…';
+    resultEl.textContent = '';
+    clearErr();
+
+    try {
+      var gRes = await sb.from(T('guests')).select('*');
+      if (gRes.error) throw gRes.error;
+      var all = gRes.data;
+      var unmatched = all.filter(function (g) { return !g.match_id; });
+
+      var mRes = await sb.from(T('matches')).select('*');
+      if (mRes.error) throw mRes.error;
+      mRes.data.forEach(function (m) { usedWords.add(m.secret_word); });
+
+      if (unmatched.length === 0) {
+        resultEl.textContent = 'Nobody is waiting right now.';
+      } else if (unmatched.length === 1) {
+        resultEl.textContent = await joinLateGuest(unmatched[0], all, mRes.data);
+      } else {
+        resultEl.textContent = await matchGroups(unmatched);
+      }
+    } catch (e) {
+      console.error(e);
+      resultEl.textContent = 'Something went wrong — ' + (e && e.message ? e.message : 'check the browser console.');
+    }
+
+    btn.disabled = false; btn.textContent = 'Run matching now';
+    await refreshStats();
+  }
+
+  // One person arrived after the last run: add them to the best existing pair
+  // (making a group of three) so nobody is left out.
+  async function joinLateGuest(guest, allGuests, matches) {
+    var byId = {};
+    allGuests.forEach(function (g) { byId[g.id] = g; });
+    var open = matches.filter(function (m) { return !m.guest_c && byId[m.guest_a] && byId[m.guest_b]; });
+    if (open.length === 0) {
+      return 'Only one person is waiting and there is no pair to join yet — more guests need to check in.';
+    }
+    var pairs = open.map(function (m) { return [byId[m.guest_a], byId[m.guest_b]]; });
+    var k = window.Matching.bestJoin(guest, pairs);
+    if (k < 0) k = 0;
+    var match = open[k];
+
+    var u1 = await sb.from(T('matches')).update({ guest_c: guest.id }).eq('id', match.id);
+    if (u1.error) throw u1.error;
+    var u2 = await sb.from(T('guests')).update({ match_id: match.id }).eq('id', guest.id);
+    if (u2.error) throw u2.error;
+    return 'Late arrival added to an existing pair — now a group of three.';
+  }
+
+  async function matchGroups(unmatched) {
+    var out = window.Matching.computeMatches(unmatched);
+    var groups = out.groups;
+    if (!groups.length) return 'No new matches could be made.';
+
+    var failed = 0;
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var row = {
+        guest_a: g[0].id,
+        guest_b: g[1].id,
+        guest_c: g[2] ? g[2].id : null,
+        secret_word: randomSecretWord()
+      };
+      var ins = await sb.from(T('matches')).insert(row).select().single();
+      if (ins.error) { console.error(ins.error); failed++; continue; }
+      var ids = g.map(function (x) { return x.id; });
+      var upd = await sb.from(T('guests')).update({ match_id: ins.data.id }).in('id', ids);
+      if (upd.error) { console.error(upd.error); failed++; }
+    }
+
+    var s = window.Matching.summarize(groups);
+    var msg = s.groups + ' group' + (s.groups === 1 ? '' : 's') + ' created';
+    var parts = [];
+    parts.push(s.perfect + ' with no compromises');
+    if (s.ageCompromises) parts.push(s.ageCompromises + ' break the age rule (not enough guys/girls of the right age)');
+    if (s.genderCompromises) parts.push(s.genderCompromises + ' are same-gender or they/them with a girl/guy (not enough of the opposite gender)');
+    if (s.intentMismatches) parts.push(s.intentMismatches + ' mix friends-only with open-to-more');
+    if (s.trios) parts.push(s.trios + ' group of three (odd head-count, so nobody is left out)');
+    msg += ': ' + parts.join('; ') + '.';
+    if (failed) {
+      msg += ' WARNING: ' + failed + ' group(s) did not save fully — press Refresh and look for anyone still showing "No" under Matched, then run matching again.';
+    }
+    return msg;
+  }
+})();
+</script>
+</body>
+</html>
