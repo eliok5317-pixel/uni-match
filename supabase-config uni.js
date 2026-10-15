@@ -14,4 +14,4 @@ window.EVENT_NAME = "3arrefni";
 // CUSTOMIZE: change this before the party! It only keeps random guests from
 // clicking "Run matching" — it is NOT real security, and anyone who views the
 // page source can read it, so don't reuse a password you care about.
-window.ADMIN_PASSCODE = "CHANGE_ME";
+window.ADMIN_PASSCODE = "SRH2000s";
